@@ -1,0 +1,76 @@
+{
+  "info": {
+    "name": "AirAsia Low Fare Calendar",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "origin", "value": "KUL" },
+    { "key": "destination", "value": "SIN" },
+    { "key": "month", "value": "2026-06" },
+    { "key": "date", "value": "2026-06-15" }
+  ],
+  "item": [
+    {
+      "name": "Get Calendar (MYR)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/flights/calendar?origin={{origin}}&destination={{destination}}&month={{month}}&currency=MYR",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "flights", "calendar"],
+          "query": [
+            { "key": "origin", "value": "{{origin}}" },
+            { "key": "destination", "value": "{{destination}}" },
+            { "key": "month", "value": "{{month}}" },
+            { "key": "currency", "value": "MYR" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Calendar (USD)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/flights/calendar?origin={{origin}}&destination={{destination}}&month={{month}}&currency=USD",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "flights", "calendar"],
+          "query": [
+            { "key": "origin", "value": "{{origin}}" },
+            { "key": "destination", "value": "{{destination}}" },
+            { "key": "month", "value": "{{month}}" },
+            { "key": "currency", "value": "USD" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Publish Sold-Out Event",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/flights/sold-out",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "flights", "sold-out"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"{{$guid}}\",\n  \"origin\": \"{{origin}}\",\n  \"destination\": \"{{destination}}\",\n  \"date\": \"{{date}}\",\n  \"flightNumber\": \"AK100\",\n  \"priceClass\": \"PROMO\",\n  \"occurredAtEpochMillis\": {{$timestamp}}000\n}"
+        }
+      }
+    },
+    {
+      "name": "Cache Metrics (Prometheus)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/actuator/prometheus",
+          "host": ["{{baseUrl}}"],
+          "path": ["actuator", "prometheus"]
+        }
+      }
+    }
+  ]
+}
