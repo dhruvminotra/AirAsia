@@ -4,10 +4,10 @@ import com.airasia.flight.config.CalendarProperties;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.TreeMap;
 
 /**
  * Config-backed rates ({@code calendar.exchange-rates}). Adding a currency is a
@@ -17,11 +17,12 @@ import java.util.TreeMap;
 @Component
 public class InMemoryExchangeRateProvider implements ExchangeRateProvider {
 
-    private final Map<String, BigDecimal> rates = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    /** Keys are always upper-cased on insert and on lookup, so a plain HashMap suffices. */
+    private final Map<String, BigDecimal> rates = new HashMap<>();
 
     public InMemoryExchangeRateProvider(CalendarProperties properties) {
-        rates.put(properties.getBaseCurrency().toUpperCase(Locale.ROOT), BigDecimal.ONE);
-        properties.getExchangeRates().forEach((code, rate) -> rates.put(code.toUpperCase(Locale.ROOT), rate));
+        rates.put(properties.baseCurrency().toUpperCase(Locale.ROOT), BigDecimal.ONE);
+        properties.exchangeRates().forEach((code, rate) -> rates.put(code.toUpperCase(Locale.ROOT), rate));
     }
 
     @Override

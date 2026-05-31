@@ -59,7 +59,7 @@ class RedisIntegrationTest {
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
         CacheKeyFactory keys = new CacheKeyFactory();
-        CalendarProperties properties = new CalendarProperties();
+        CalendarProperties properties = CalendarProperties.defaults();
         cache = new LowFareCache(redisTemplate, objectMapper, keys,
                 new CacheMetrics(new SimpleMeterRegistry()), properties);
         processedEvents = new ProcessedEventStore(redisTemplate, keys);

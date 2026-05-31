@@ -61,28 +61,22 @@ calendar:
     SGD: 0.29
     IDR: 3450.0
 
-# One entry per AirAsia Group carrier (each on its own Navitaire New Skies).
-# Carrier code + simulated latency/failure rate are config so the circuit breaker
-# and fault tolerance can be demonstrated end to end.
+# Per-carrier simulated latency/failure rate (display name + carrier code now live
+# in the FlightSearcherType enum). Keys must match FlightSearcherType.providerId().
 providers:
-  airasia-malaysia:
-    display-name: AirAsia (Malaysia)
-    carrier-code: AK
-    min-latency-millis: 20
-    max-latency-millis: 120
-    failure-rate: 0.02
-  airasia-x:
-    display-name: AirAsia X
-    carrier-code: D7
-    min-latency-millis: 30
-    max-latency-millis: 150
-    failure-rate: 0.05
-  thai-airasia:
-    display-name: Thai AirAsia
-    carrier-code: FD
-    min-latency-millis: 25
-    max-latency-millis: 140
-    failure-rate: 0.03
+  settings:
+    airasia-malaysia:
+      min-latency-millis: 20
+      max-latency-millis: 120
+      failure-rate: 0.02
+    airasia-x:
+      min-latency-millis: 30
+      max-latency-millis: 150
+      failure-rate: 0.05
+    thai-airasia:
+      min-latency-millis: 25
+      max-latency-millis: 140
+      failure-rate: 0.03
 
 # ----------------------------------------------------------------------------
 # Resilience4j circuit breakers: one instance per provider. On open circuit the

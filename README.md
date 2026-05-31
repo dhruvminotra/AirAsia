@@ -87,3 +87,4 @@ a real Redis via Testcontainers (auto-skipped if Docker is unavailable).
 - `calendar.provider-timeout-millis` — per-provider hard timeout.
 - `providers.*` — per-carrier IATA code + simulated latency/failure (to exercise the circuit breaker).
 - `calendar.warming.*` — startup pre-population routes.
+# AirAsia

@@ -64,18 +64,11 @@ public class CalendarService {
     }
 
     private Map<LocalDate, CachedLowFare> computeAndStore(FareCalendarRequest query, List<LocalDate> missing) {
-        // Re-read inside the coalesced section in case another waiter already populated.
-        Map<LocalDate, CachedLowFare> result =
-                new LinkedHashMap<>(cache.getAll(query.origin(), query.destination(), missing));
-        List<LocalDate> stillMissing = missing.stream().filter(d -> !result.containsKey(d)).toList();
-        if (stillMissing.isEmpty()) {
-            return result;
-        }
-
         Map<LocalDate, ProviderFare> fresh = aggregator.lowestByDate(
-                FlightSearchQuery.forDates(query.origin(), query.destination(), stillMissing));
+                FlightSearchQuery.forDates(query.origin(), query.destination(), missing));
 
-        for (LocalDate date : stillMissing) {
+        Map<LocalDate, CachedLowFare> result = new LinkedHashMap<>();
+        for (LocalDate date : missing) {
             ProviderFare fare = fresh.get(date);
             CachedLowFare cached = fare != null ? CachedLowFare.of(fare) : CachedLowFare.empty(date);
             cache.put(query.origin(), query.destination(), cached);

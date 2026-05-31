@@ -2,65 +2,44 @@ package com.airasia.flight.provider;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Binds the {@code providers.*} block — one entry per AirAsia Group carrier
- * (each running its own Navitaire New Skies). Each carrier's IATA code and its
- * simulated latency/failure rate are config, not code, so behaviour can be tuned
- * (e.g. to exercise the circuit breaker) without recompiling.
+ * (each on its own Navitaire New Skies). Keys match {@link FlightSearcherType#providerId()}
+ * (e.g. {@code airasia-malaysia}); values are the simulated latency / failure rate
+ * tunables used by {@link NavitaireSearcher} to exercise the circuit breaker.
  */
 @ConfigurationProperties(prefix = "providers")
 public class ProviderProperties {
 
-    private ProviderSettings airAsiaMalaysia = new ProviderSettings();
-    private ProviderSettings airAsiaX = new ProviderSettings();
-    private ProviderSettings thaiAirAsia = new ProviderSettings();
+    /**
+     * Spring-relaxed binding turns yaml keys like {@code airasia-malaysia} into this
+     * map by direct key (no field-naming dance). The map is the property itself —
+     * the field name is required for binding but no longer mirrors carrier names.
+     */
+    private Map<String, ProviderSettings> settings = new LinkedHashMap<>();
 
-    public ProviderSettings getAirAsiaMalaysia() {
-        return airAsiaMalaysia;
+    public Map<String, ProviderSettings> getSettings() {
+        return settings;
     }
 
-    public void setAirAsiaMalaysia(ProviderSettings airAsiaMalaysia) {
-        this.airAsiaMalaysia = airAsiaMalaysia;
+    public void setSettings(Map<String, ProviderSettings> settings) {
+        this.settings = settings;
     }
 
-    public ProviderSettings getAirAsiaX() {
-        return airAsiaX;
-    }
-
-    public void setAirAsiaX(ProviderSettings airAsiaX) {
-        this.airAsiaX = airAsiaX;
-    }
-
-    public ProviderSettings getThaiAirAsia() {
-        return thaiAirAsia;
-    }
-
-    public void setThaiAirAsia(ProviderSettings thaiAirAsia) {
-        this.thaiAirAsia = thaiAirAsia;
+    /**
+     * Look up the tunables for a carrier; returns defaults if no yaml block was supplied.
+     */
+    public ProviderSettings settingsFor(FlightSearcherType type) {
+        return settings.getOrDefault(type.providerId(), new ProviderSettings());
     }
 
     public static class ProviderSettings {
-        private String displayName = "provider";
-        private String carrierCode = "AK";
         private long minLatencyMillis = 20;
         private long maxLatencyMillis = 120;
         private double failureRate = 0.0;
-
-        public String getDisplayName() {
-            return displayName;
-        }
-
-        public void setDisplayName(String displayName) {
-            this.displayName = displayName;
-        }
-
-        public String getCarrierCode() {
-            return carrierCode;
-        }
-
-        public void setCarrierCode(String carrierCode) {
-            this.carrierCode = carrierCode;
-        }
 
         public long getMinLatencyMillis() {
             return minLatencyMillis;

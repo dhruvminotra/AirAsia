@@ -1,155 +1,84 @@
 package com.airasia.flight.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Binds the {@code calendar.*} block. Exchange rates and cache tuning live here
- * so they are data-driven: supporting a new currency is a config edit, not a
- * code change (Open/Closed Principle).
+ * Typed binding of the {@code calendar.*} block. Records with {@code @DefaultValue}
+ * give us defaults when yaml is silent <i>and</i> keep the type immutable — so
+ * configuration is read-only at runtime and the class stays free of getter/setter
+ * boilerplate.
+ *
+ * <p>Test code uses {@link #defaults()} plus the small {@code with…} helpers to
+ * vary one field at a time.
  */
 @ConfigurationProperties(prefix = "calendar")
-public class CalendarProperties {
+public record CalendarProperties(
+        @DefaultValue("MYR") String baseCurrency,
+        @DefaultValue("450") long providerTimeoutMillis,
+        Map<String, BigDecimal> exchangeRates,
+        @DefaultValue Cache cache,
+        @DefaultValue PubSub pubsub,
+        @DefaultValue Warming warming) {
 
-    private String baseCurrency = "MYR";
-    private long providerTimeoutMillis = 450;
-    private Map<String, BigDecimal> exchangeRates = new LinkedHashMap<>();
-    private Cache cache = new Cache();
-    private PubSub pubsub = new PubSub();
-    private Warming warming = new Warming();
-
-    public String getBaseCurrency() {
-        return baseCurrency;
-    }
-
-    public void setBaseCurrency(String baseCurrency) {
-        this.baseCurrency = baseCurrency;
-    }
-
-    public long getProviderTimeoutMillis() {
-        return providerTimeoutMillis;
-    }
-
-    public void setProviderTimeoutMillis(long providerTimeoutMillis) {
-        this.providerTimeoutMillis = providerTimeoutMillis;
-    }
-
-    public Map<String, BigDecimal> getExchangeRates() {
-        return exchangeRates;
-    }
-
-    public void setExchangeRates(Map<String, BigDecimal> exchangeRates) {
-        this.exchangeRates = exchangeRates;
-    }
-
-    public Cache getCache() {
-        return cache;
-    }
-
-    public void setCache(Cache cache) {
-        this.cache = cache;
-    }
-
-    public PubSub getPubsub() {
-        return pubsub;
-    }
-
-    public void setPubsub(PubSub pubsub) {
-        this.pubsub = pubsub;
-    }
-
-    public Warming getWarming() {
-        return warming;
-    }
-
-    public void setWarming(Warming warming) {
-        this.warming = warming;
-    }
-
-    public static class Cache {
-        private long ttlSeconds = 86400;
-        private long ttlJitterSeconds = 3600;
-        private long emptyTtlSeconds = 300;
-
-        public long getTtlSeconds() {
-            return ttlSeconds;
-        }
-
-        public void setTtlSeconds(long ttlSeconds) {
-            this.ttlSeconds = ttlSeconds;
-        }
-
-        public long getTtlJitterSeconds() {
-            return ttlJitterSeconds;
-        }
-
-        public void setTtlJitterSeconds(long ttlJitterSeconds) {
-            this.ttlJitterSeconds = ttlJitterSeconds;
-        }
-
-        public long getEmptyTtlSeconds() {
-            return emptyTtlSeconds;
-        }
-
-        public void setEmptyTtlSeconds(long emptyTtlSeconds) {
-            this.emptyTtlSeconds = emptyTtlSeconds;
+    public CalendarProperties {
+        if (exchangeRates == null) {
+            exchangeRates = Map.of();
         }
     }
 
-    public static class Warming {
-        private boolean enabled = true;
-        private int monthsAhead = 1;
-        /** Routes to pre-warm, formatted "ORIGIN-DESTINATION". */
-        private List<String> routes = new ArrayList<>();
+    /** Redis TTL knobs. */
+    public record Cache(
+            @DefaultValue("86400") long ttlSeconds,
+            @DefaultValue("3600") long ttlJitterSeconds,
+            @DefaultValue("300") long emptyTtlSeconds) {
+    }
 
-        public boolean isEnabled() {
-            return enabled;
-        }
+    /** Pub/Sub topic + subscription names. */
+    public record PubSub(
+            @DefaultValue("price-class-sold-out") String soldOutTopic,
+            @DefaultValue("sold-out-sub") String soldOutSubscription) {
+    }
 
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
+    /** Startup cache warm-up routes. */
+    public record Warming(
+            @DefaultValue("true") boolean enabled,
+            @DefaultValue("1") int monthsAhead,
+            List<String> routes) {
 
-        public int getMonthsAhead() {
-            return monthsAhead;
-        }
-
-        public void setMonthsAhead(int monthsAhead) {
-            this.monthsAhead = monthsAhead;
-        }
-
-        public List<String> getRoutes() {
-            return routes;
-        }
-
-        public void setRoutes(List<String> routes) {
-            this.routes = routes;
+        public Warming {
+            if (routes == null) {
+                routes = List.of();
+            }
         }
     }
 
-    public static class PubSub {
-        private String soldOutTopic = "price-class-sold-out";
-        private String soldOutSubscription = "sold-out-sub";
+    // ------------------------------------------------------------------
+    // Test helpers — concise construction with all fields at defaults,
+    // plus single-field overrides. Production code never calls these.
+    // ------------------------------------------------------------------
 
-        public String getSoldOutTopic() {
-            return soldOutTopic;
-        }
+    public static CalendarProperties defaults() {
+        return new CalendarProperties(
+                "MYR", 450L, Map.of(),
+                new Cache(86400, 3600, 300),
+                new PubSub("price-class-sold-out", "sold-out-sub"),
+                new Warming(true, 1, List.of()));
+    }
 
-        public void setSoldOutTopic(String soldOutTopic) {
-            this.soldOutTopic = soldOutTopic;
-        }
+    public CalendarProperties withBaseCurrency(String baseCurrency) {
+        return new CalendarProperties(baseCurrency, providerTimeoutMillis, exchangeRates, cache, pubsub, warming);
+    }
 
-        public String getSoldOutSubscription() {
-            return soldOutSubscription;
-        }
+    public CalendarProperties withProviderTimeoutMillis(long providerTimeoutMillis) {
+        return new CalendarProperties(baseCurrency, providerTimeoutMillis, exchangeRates, cache, pubsub, warming);
+    }
 
-        public void setSoldOutSubscription(String soldOutSubscription) {
-            this.soldOutSubscription = soldOutSubscription;
-        }
+    public CalendarProperties withExchangeRates(Map<String, BigDecimal> exchangeRates) {
+        return new CalendarProperties(baseCurrency, providerTimeoutMillis, exchangeRates, cache, pubsub, warming);
     }
 }

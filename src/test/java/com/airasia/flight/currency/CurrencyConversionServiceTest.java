@@ -12,11 +12,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CurrencyConversionServiceTest {
 
     private CurrencyConversionService newService() {
-        CalendarProperties properties = new CalendarProperties();
-        properties.setBaseCurrency("MYR");
-        properties.setExchangeRates(Map.of(
-                "USD", new BigDecimal("0.21"),
-                "THB", new BigDecimal("7.60")));
+        CalendarProperties properties = CalendarProperties.defaults()
+                .withExchangeRates(Map.of(
+                        "USD", new BigDecimal("0.21"),
+                        "THB", new BigDecimal("7.60")));
         return new CurrencyConversionService(new InMemoryExchangeRateProvider(properties));
     }
 

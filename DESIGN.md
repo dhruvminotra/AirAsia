@@ -31,7 +31,7 @@ the AirAsia MOVE Low Fare Calendar backend.
                                   │        │             └───────┬──────────┘ │
                                   │        │      ┌──────────────┼───────────┐│
                                   │        │      ▼              ▼           ▼│   ┌──────────────────┐
-                                  │        │  AirAsia(AK)  AirAsiaX(D7)  ThaiAirAsia(FD) │ (3 carriers, each│
+                                  │        │  FlightSearcherType enum drives one shared  │ (3 carriers, each│
                                   │        │  (CircuitBreaker each, bounded pool)        │  on Navitaire)   │
                                   │        │                                  │   └──────────────────┘
                                   │  ┌─────┴───────────────┐                  │
@@ -48,7 +48,8 @@ the AirAsia MOVE Low Fare Calendar backend.
 |-----------|----------------|
 | `FlightCalendarController` | Thin REST entry point (`flight.calendar`); validates the request and delegates to `CalendarService` / `SoldOutEventPublisher`. |
 | `CalendarService` | Orchestrates cache-aside read → coalesced miss load → aggregation → currency conversion → `FareCalendarResponse`. |
-| `FlightSearcher` / `AbstractFlightSearcher` | Provider contract + template method (mirrors our prod `AbstractSearcher`). |
+| `FlightSearcherType` (enum) | Single source of truth for the carriers — one entry per AirAsia airline (AK/D7/FD). New carrier = new enum value + a yaml block. |
+| `NavitaireSearcher` | One Spring component (the mock Navitaire backend) — all carriers share it, parameterised by `FlightSearcherType`. |
 | `FlightSearchEngine` | Parallel scatter-gather across carriers (submit `Callable` → `Future<SearchResult>[]` → get+merge), circuit breaker per provider, picks lowest. Mirrors prod `AbstractFlightSearchEngine`. |
 | `LowFareCache` | Cache-aside Redis repository (base-currency values, bulk `MGET`). |
 | `RequestCoalescer` | Thundering-herd protection (in-process single-flight per route+month). |
@@ -159,13 +160,13 @@ observability; `empty=true` is the negative-cache marker.
 
 | Pattern | Where | Why |
 |---------|-------|-----|
-| **Template Method** | `AbstractFlightSearcher` | Centralises timing/logging/sold-out filtering so each provider implements only `doSearch`. Mirrors prod `AbstractSearcher` → `NavitaireSearcher`. |
+| **Enum-driven dispatch** | `FlightSearcherType` + `NavitaireSearcher` | All carriers share one Navitaire backend, so the engine iterates the enum and parameterises a single searcher — no class explosion for thin per-carrier subclasses. |
 | **Strategy + Open/Closed** | `ExchangeRateProvider` / currencies as config | New currency = a config row, no code. Live FX feed = a new `ExchangeRateProvider` impl, no caller change. |
 | **Scatter-Gather** | `FlightSearchEngine` | Submit a `Callable` per provider → `Future<SearchResult>[]` → `get(...)` within a shared deadline → merge → reduce-to-min. Mirrors prod `AbstractFlightSearchEngine`. |
 | **Cache-Aside** | `LowFareCache` + `CalendarService` | Read-through with explicit population and negative caching. |
 | **Single-Flight / Coalescing** | `RequestCoalescer` | Thundering-herd protection (one in-flight build per route+month). |
 | **Circuit Breaker** | Resilience4j per provider | Fault isolation + graceful degradation. |
-| **Plugin discovery** | `List<AbstractFlightSearcher>` injection | Add a carrier by adding a `@Component`; aggregator needs no change. |
+| **Open/Closed** | `FlightSearcherType.values()` | Add a carrier by adding one enum value + one yaml block — engine, breaker config, and metrics adapt automatically. |
 
 Class sketch:
 
@@ -174,11 +175,14 @@ FlightCalendarController ──▶ CalendarService ──has──▶ LowFareCac
                                                       CurrencyConversionService, RequestCoalescer
                          ──▶ SoldOutEventPublisher (POST /sold-out)
 
-AbstractFlightSearcher (template: search() -> doSearch())
-  ▲                    ▲                ▲
-AirAsiaMalaysia(AK)  AirAsiaX(D7)  ThaiAirAsia(FD) ──uses──▶ MockNavitaireEngine (Navitaire New Skies)
+FlightSearcherType (enum)            ┌──────────────────────────────┐
+  ├─ AIRASIA_MALAYSIA  (AK)          │ NavitaireSearcher            │
+  ├─ AIRASIA_X         (D7)  ───▶   │ (one mock for all carriers,  │
+  └─ THAI_AIRASIA      (FD)          │  parameterised by the enum)  │
+                                     └──────────────────────────────┘
 
-FlightSearchEngine ──has──▶ List<AbstractFlightSearcher>, ExecutorService(bounded pool), CircuitBreakerRegistry
+FlightSearchEngine ──has──▶ NavitaireSearcher, ExecutorService(bounded pool), CircuitBreakerRegistry
+                   ──iterates──▶ FlightSearcherType.values()
                    ──per provider──▶ Callable<SearchResult>  (SearchResult wraps List<ProviderFare>)
 ```
 
@@ -225,7 +229,7 @@ fails the whole request; stale cache is preferred over an error.
 
 ## 5. Trade-offs & notes
 
-- Providers are **mocked** (`MockNavitaireEngine`) on purpose — the brief asks for
+- Providers are **mocked** (`NavitaireSearcher`) on purpose — the brief asks for
   design quality, and AirAsia runs Navitaire, so the abstraction mirrors our prod
   `AbstractSearcher`/`NavitaireSearcher` stack rather than integrating real GDSs.
 - Conversion-at-read trades a tiny per-response CPU cost for a far higher hit ratio

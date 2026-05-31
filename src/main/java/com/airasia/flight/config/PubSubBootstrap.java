@@ -16,8 +16,8 @@ public class PubSubBootstrap {
     private static final Logger log = LoggerFactory.getLogger(PubSubBootstrap.class);
 
     public PubSubBootstrap(PubSubAdmin pubSubAdmin, CalendarProperties properties) {
-        String topic = properties.getPubsub().getSoldOutTopic();
-        String subscription = properties.getPubsub().getSoldOutSubscription();
+        String topic = properties.pubsub().soldOutTopic();
+        String subscription = properties.pubsub().soldOutSubscription();
 
         if (pubSubAdmin.getTopic(topic) == null) {
             pubSubAdmin.createTopic(topic);

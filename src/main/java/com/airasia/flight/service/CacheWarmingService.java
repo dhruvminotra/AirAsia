@@ -28,25 +28,24 @@ public class CacheWarmingService {
 
     public CacheWarmingService(CalendarService calendarService, CalendarProperties properties) {
         this.calendarService = calendarService;
-        this.warming = properties.getWarming();
-        this.baseCurrency = properties.getBaseCurrency();
+        this.warming = properties.warming();
+        this.baseCurrency = properties.baseCurrency();
     }
 
     @Async("providerExecutor")
     @EventListener(ApplicationReadyEvent.class)
-    public void warmOnStartup() {
-        if (!warming.isEnabled() || warming.getRoutes().isEmpty()) {
+    public void initialize() {
+        if (!warming.enabled() || warming.routes().isEmpty()) {
             return;
         }
-        log.info("Warming cache for {} route(s), {} month(s) ahead", warming.getRoutes().size(),
-                warming.getMonthsAhead());
-        for (String route : warming.getRoutes()) {
+        log.info("Warming cache for {} route(s), {} month(s) ahead", warming.routes().size(), warming.monthsAhead());
+        for (String route : warming.routes()) {
             String[] parts = route.split("-");
             if (parts.length != 2) {
                 log.warn("Skipping malformed warming route '{}'", route);
                 continue;
             }
-            for (int offset = 0; offset <= warming.getMonthsAhead(); offset++) {
+            for (int offset = 0; offset <= warming.monthsAhead(); offset++) {
                 YearMonth month = YearMonth.now().plusMonths(offset);
                 warmQuietly(parts[0], parts[1], month);
             }

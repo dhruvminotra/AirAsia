@@ -37,7 +37,7 @@ public class LowFareCache {
         this.objectMapper = objectMapper;
         this.keys = keys;
         this.metrics = metrics;
-        this.cacheProps = properties.getCache();
+        this.cacheProps = properties.cache();
     }
 
     /**
@@ -70,7 +70,7 @@ public class LowFareCache {
 
     public void put(String origin, String destination, CachedLowFare fare) {
         String key = keys.fareKey(origin, destination, fare.date());
-        Duration ttl = fare.empty() ? Duration.ofSeconds(cacheProps.getEmptyTtlSeconds()) : jitteredTtl();
+        Duration ttl = fare.empty() ? Duration.ofSeconds(cacheProps.emptyTtlSeconds()) : jitteredTtl();
         write(key, fare, ttl);
         metrics.recordPut();
     }
@@ -98,8 +98,8 @@ public class LowFareCache {
 
     /** Base TTL plus a per-key random jitter to avoid synchronised mass expiry. */
     private Duration jitteredTtl() {
-        long jitter = cacheProps.getTtlJitterSeconds() <= 0
-                ? 0 : ThreadLocalRandom.current().nextLong(cacheProps.getTtlJitterSeconds() + 1);
-        return Duration.ofSeconds(cacheProps.getTtlSeconds() + jitter);
+        long jitter = cacheProps.ttlJitterSeconds() <= 0
+                ? 0 : ThreadLocalRandom.current().nextLong(cacheProps.ttlJitterSeconds() + 1);
+        return Duration.ofSeconds(cacheProps.ttlSeconds() + jitter);
     }
 }

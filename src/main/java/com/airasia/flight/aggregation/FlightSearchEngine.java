@@ -3,8 +3,9 @@ package com.airasia.flight.aggregation;
 import com.airasia.flight.config.CalendarProperties;
 import com.airasia.flight.model.ProviderFare;
 import com.airasia.flight.model.SearchResult;
-import com.airasia.flight.provider.AbstractFlightSearcher;
 import com.airasia.flight.provider.FlightSearchQuery;
+import com.airasia.flight.provider.FlightSearcherType;
+import com.airasia.flight.provider.NavitaireSearcher;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -26,114 +27,111 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Scatter-gather engine across all carrier providers (discovered via Spring list
- * injection), mirroring the production {@code AbstractFlightSearchEngine}: submit
- * one {@link SearchResult}-returning task per provider, collect the
- * {@link Future}s, then {@code get(...)} each within a shared deadline and merge
- * the results. Each call is guarded by its own circuit breaker; a failing / slow /
- * open provider contributes nothing rather than failing the request (graceful
- * degradation). Finally the cheapest fare per date wins.
+ * Scatter-gather engine across every {@link FlightSearcherType} (carrier),
+ * mirroring the production {@code AbstractFlightSearchEngine}: submit one task
+ * per carrier to the pool, collect {@code Future<SearchResult>[]}, then
+ * {@code get(...)} each within a shared deadline and merge. Each call is guarded
+ * by its own circuit breaker; a failing / slow / open carrier contributes
+ * nothing rather than failing the request (graceful degradation). Finally the
+ * cheapest fare per date wins.
  */
 @Service
 public class FlightSearchEngine {
 
     private static final Logger log = LoggerFactory.getLogger(FlightSearchEngine.class);
 
-    private final List<AbstractFlightSearcher> providers;
+    private final NavitaireSearcher searcher;
     private final ExecutorService executor;
     private final CircuitBreakerRegistry circuitBreakerRegistry;
     private final MeterRegistry meterRegistry;
     private final long timeoutMillis;
 
-    public FlightSearchEngine(List<AbstractFlightSearcher> providers, @Qualifier("providerExecutor") ExecutorService executor, CircuitBreakerRegistry circuitBreakerRegistry, MeterRegistry meterRegistry, CalendarProperties properties) {
-        this.providers = providers;
+    public FlightSearchEngine(NavitaireSearcher searcher,
+                              @Qualifier("providerExecutor") ExecutorService executor,
+                              CircuitBreakerRegistry circuitBreakerRegistry,
+                              MeterRegistry meterRegistry,
+                              CalendarProperties properties) {
+        this.searcher = searcher;
         this.executor = executor;
         this.circuitBreakerRegistry = circuitBreakerRegistry;
         this.meterRegistry = meterRegistry;
-        this.timeoutMillis = properties.getProviderTimeoutMillis();
+        this.timeoutMillis = properties.providerTimeoutMillis();
     }
 
-    /**
-     * Cheapest bookable fare per date across all providers.
-     */
+    /** Cheapest bookable fare per date across all carriers. */
     public Map<LocalDate, ProviderFare> lowestByDate(FlightSearchQuery query) {
-        SearchResult consolidated = searchAllProviders(query);
+        SearchResult consolidated = searchAllCarriers(query);
         return cheapestPerDate(consolidated.fares());
     }
 
-    /**
-     * Fan out to every provider in parallel and merge what comes back in time.
-     */
-    private SearchResult searchAllProviders(FlightSearchQuery query) {
-        // Scatter: submit one task per provider; all start running immediately.
-        List<Future<SearchResult>> futures = new ArrayList<>(providers.size());
-        for (AbstractFlightSearcher provider : providers) {
-            futures.add(executor.submit(() -> searchProvider(provider, query)));
+    /** Fan out to every carrier in parallel and merge what comes back in time. */
+    private SearchResult searchAllCarriers(FlightSearchQuery query) {
+        FlightSearcherType[] carriers = FlightSearcherType.values();
+
+        // Scatter: submit one task per carrier; all start running immediately.
+        List<Future<SearchResult>> futures = new ArrayList<>(carriers.length);
+        for (FlightSearcherType carrier : carriers) {
+            futures.add(executor.submit(() -> searchCarrier(carrier, query)));
         }
 
-        // A single deadline shared by all gets, so three hung providers can't sum
-        // their timeouts and blow the latency budget.
+        // Shared deadline keeps total wait <= timeoutMillis (P99 budget).
         long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
 
-        // Gather: merge each provider's result, degrading on failure/timeout.
+        // Gather: merge each carrier's result, degrading on failure/timeout.
         SearchResult consolidated = new SearchResult();
-        for (int i = 0; i < providers.size(); i++) {
-            consolidated.mergeWith(await(providers.get(i), futures.get(i), deadlineNanos));
+        for (int i = 0; i < carriers.length; i++) {
+            consolidated.mergeWith(await(carriers[i], futures.get(i), deadlineNanos));
         }
         return consolidated;
     }
 
-    /**
-     * Runs on a pool thread: invoke one carrier's searcher, guarded by that
-     * carrier's circuit breaker. Returns a {@link SearchResult} so the caller
-     * can merge it with the others.
-     */
-    private SearchResult searchProvider(AbstractFlightSearcher provider, FlightSearchQuery query) {
-        CircuitBreaker breaker = circuitBreakerRegistry.circuitBreaker(provider.providerId());
-        return SearchResult.of(breaker.executeSupplier(() -> provider.search(query)));
+    /** Runs on a pool thread: one carrier's search guarded by its circuit breaker. */
+    private SearchResult searchCarrier(FlightSearcherType carrier, FlightSearchQuery query) {
+        CircuitBreaker breaker = circuitBreakerRegistry.circuitBreaker(carrier.providerId());
+        return SearchResult.of(breaker.executeSupplier(() -> searcher.search(carrier, query)));
     }
 
-    /**
-     * Wait for one provider within the remaining budget; never throws.
-     */
-    private SearchResult await(AbstractFlightSearcher provider, Future<SearchResult> future, long deadlineNanos) {
+    /** Wait for one carrier within the remaining budget; never throws. */
+    private SearchResult await(FlightSearcherType carrier, Future<SearchResult> future, long deadlineNanos) {
         try {
             long remainingMs = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
             SearchResult result = future.get(remainingMs, TimeUnit.MILLISECONDS);
-            record(provider, "success");
+            record(carrier, "success");
             return result;
         } catch (TimeoutException e) {
             future.cancel(true);
-            record(provider, "timeout");
-            log.warn("[{}] timed out after {} ms", provider.providerId(), timeoutMillis);
+            record(carrier, "timeout");
+            log.warn("[{}] timed out after {} ms", carrier.providerId(), timeoutMillis);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof CallNotPermittedException) {
-                record(provider, "circuit_open");
-                log.debug("[{}] skipped — circuit open", provider.providerId());
+                record(carrier, "circuit_open");
+                log.debug("[{}] skipped — circuit open", carrier.providerId());
             } else {
-                record(provider, "failure");
-                log.warn("[{}] failed: {}", provider.providerId(), e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+                record(carrier, "failure");
+                log.warn("[{}] failed: {}", carrier.providerId(),
+                        e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            record(provider, "failure");
-            log.warn("[{}] interrupted", provider.providerId());
+            record(carrier, "failure");
+            log.warn("[{}] interrupted", carrier.providerId());
         }
         return SearchResult.empty();
     }
 
-    /**
-     * Reduce all fares to the cheapest one per date.
-     */
+    /** Reduce all fares to the cheapest one per date. */
     private Map<LocalDate, ProviderFare> cheapestPerDate(List<ProviderFare> fares) {
         Map<LocalDate, ProviderFare> cheapest = new HashMap<>();
         for (ProviderFare fare : fares) {
-            cheapest.merge(fare.date(), fare, (existing, candidate) -> candidate.baseAmount().compareTo(existing.baseAmount()) < 0 ? candidate : existing);
+            cheapest.merge(fare.date(), fare,
+                    (existing, candidate) ->
+                            candidate.baseAmount().compareTo(existing.baseAmount()) < 0 ? candidate : existing);
         }
         return cheapest;
     }
 
-    private void record(AbstractFlightSearcher provider, String outcome) {
-        meterRegistry.counter("lowfare.provider.calls", "provider", provider.providerId(), "outcome", outcome).increment();
+    private void record(FlightSearcherType carrier, String outcome) {
+        meterRegistry.counter("lowfare.provider.calls",
+                "provider", carrier.providerId(), "outcome", outcome).increment();
     }
 }

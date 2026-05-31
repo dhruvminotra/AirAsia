@@ -45,7 +45,7 @@ public class SoldOutEventSubscriber {
         this.aggregator = aggregator;
         this.cache = cache;
         this.processedEvents = processedEvents;
-        this.subscription = properties.getPubsub().getSoldOutSubscription();
+        this.subscription = properties.pubsub().soldOutSubscription();
     }
 
     @PostConstruct

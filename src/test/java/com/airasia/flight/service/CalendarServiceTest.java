@@ -44,9 +44,8 @@ class CalendarServiceTest {
         cache = mock(LowFareCache.class);
         aggregator = mock(FlightSearchEngine.class);
 
-        CalendarProperties properties = new CalendarProperties();
-        properties.setBaseCurrency("MYR");
-        properties.setExchangeRates(Map.of("USD", new BigDecimal("0.20")));
+        CalendarProperties properties = CalendarProperties.defaults()
+                .withExchangeRates(Map.of("USD", new BigDecimal("0.20")));
         CurrencyConversionService currency =
                 new CurrencyConversionService(new InMemoryExchangeRateProvider(properties));
 

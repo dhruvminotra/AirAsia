@@ -22,7 +22,7 @@ public class SoldOutEventPublisher {
 
     public SoldOutEventPublisher(PubSubTemplate pubSubTemplate, CalendarProperties properties) {
         this.pubSubTemplate = pubSubTemplate;
-        this.topic = properties.getPubsub().getSoldOutTopic();
+        this.topic = properties.pubsub().soldOutTopic();
     }
 
     public void publish(SoldOutEvent event) {

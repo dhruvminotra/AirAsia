@@ -42,7 +42,7 @@ class SoldOutEventSubscriberTest {
         cache = mock(LowFareCache.class);
         processedEvents = mock(ProcessedEventStore.class);
         subscriber = new SoldOutEventSubscriber(mock(PubSubTemplate.class), aggregator, cache,
-                processedEvents, new CalendarProperties());
+                processedEvents, CalendarProperties.defaults());
     }
 
     private SoldOutEvent event(String id, long ts) {
