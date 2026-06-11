@@ -31,20 +31,26 @@ public record CalendarProperties(
         }
     }
 
-    /** Redis TTL knobs. */
+    /**
+     * Redis TTL knobs.
+     */
     public record Cache(
             @DefaultValue("86400") long ttlSeconds,
             @DefaultValue("3600") long ttlJitterSeconds,
             @DefaultValue("300") long emptyTtlSeconds) {
     }
 
-    /** Pub/Sub topic + subscription names. */
+    /**
+     * Pub/Sub topic + subscription names.
+     */
     public record PubSub(
             @DefaultValue("price-class-sold-out") String soldOutTopic,
             @DefaultValue("sold-out-sub") String soldOutSubscription) {
     }
 
-    /** Startup cache warm-up routes. */
+    /**
+     * Startup cache warm-up routes.
+     */
     public record Warming(
             @DefaultValue("true") boolean enabled,
             @DefaultValue("1") int monthsAhead,

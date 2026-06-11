@@ -54,7 +54,7 @@ class SoldOutEventSubscriberTest {
         when(processedEvents.isDuplicate("e1")).thenReturn(false);
         when(processedEvents.isNewerThanApplied(eq("KUL"), eq("SIN"), eq(DATE), eq(1000L))).thenReturn(true);
         when(aggregator.lowestByDate(any())).thenReturn(Map.of(DATE,
-                new ProviderFare("thai-airasia", "KUL", "SIN", DATE, "FD101", "SAVER", new BigDecimal("75.00"))));
+                new ProviderFare("galileo", "KUL", "SIN", DATE, "AK101", "SAVER", new BigDecimal("75.00"))));
 
         subscriber.handle(event("e1", 1000L));
 

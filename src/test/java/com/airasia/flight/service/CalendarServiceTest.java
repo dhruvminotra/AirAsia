@@ -56,7 +56,7 @@ class CalendarServiceTest {
     void servesFromCacheWithoutCallingProvidersOnFullHit() {
         Map<LocalDate, CachedLowFare> cached = new LinkedHashMap<>();
         datesOf(MONTH).forEach(d -> cached.put(d,
-                new CachedLowFare(d, new BigDecimal("100.00"), "airasia-malaysia", "AK100", "PROMO", false)));
+                new CachedLowFare(d, new BigDecimal("100.00"), "sabre", "AK100", "PROMO", false)));
         when(cache.getAll(any(), any(), anyList())).thenReturn(cached);
 
         FareCalendarResponse response = service.getCalendar(FareCalendarRequest.of("kul", "sin", MONTH, "USD"));
@@ -74,7 +74,7 @@ class CalendarServiceTest {
         when(cache.getAll(any(), any(), anyList())).thenReturn(Map.of());
         Map<LocalDate, ProviderFare> fresh = new LinkedHashMap<>();
         datesOf(MONTH).forEach(d -> fresh.put(d,
-                new ProviderFare("airasia-x", "KUL", "SIN", d, "D7200", "PROMO", new BigDecimal("55.00"))));
+                new ProviderFare("amadeus", "KUL", "SIN", d, "AK100", "PROMO", new BigDecimal("55.00"))));
         when(aggregator.lowestByDate(any())).thenReturn(fresh);
 
         FareCalendarResponse response = service.getCalendar(FareCalendarRequest.of("KUL", "SIN", MONTH, "MYR"));

@@ -6,10 +6,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Binds the {@code providers.*} block — one entry per AirAsia Group carrier
- * (each on its own Navitaire New Skies). Keys match {@link FlightSearcherType#providerId()}
- * (e.g. {@code airasia-malaysia}); values are the simulated latency / failure rate
- * tunables used by {@link NavitaireSearcher} to exercise the circuit breaker.
+ * Binds the {@code providers.*} block — one entry per GDS supplier
+ * (Sabre, Amadeus, Galileo). Keys match {@link AbstractFlightSearcher#providerId()};
+ * values are the simulated latency / failure rate tunables each searcher applies
+ * to exercise the circuit breaker.
  */
 @ConfigurationProperties(prefix = "providers")
 public class ProviderProperties {
@@ -29,11 +29,8 @@ public class ProviderProperties {
         this.settings = settings;
     }
 
-    /**
-     * Look up the tunables for a carrier; returns defaults if no yaml block was supplied.
-     */
-    public ProviderSettings settingsFor(FlightSearcherType type) {
-        return settings.getOrDefault(type.providerId(), new ProviderSettings());
+    public ProviderSettings settingsFor(String providerId) {
+        return settings.getOrDefault(providerId, new ProviderSettings());
     }
 
     public static class ProviderSettings {

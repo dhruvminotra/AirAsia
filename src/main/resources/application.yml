@@ -16,36 +16,21 @@ spring:
     gcp:
       project-id: ${SPRING_CLOUD_GCP_PUBSUB_PROJECT_ID:test-project}
       pubsub:
-        # Setting emulator-host makes spring-cloud-gcp use the emulator with no
-        # credentials required.
         emulator-host: ${SPRING_CLOUD_GCP_PUBSUB_EMULATOR_HOST:localhost:8085}
 
 server:
   port: 8080
 
-# ----------------------------------------------------------------------------
-# Application domain configuration. Currencies and providers are data-driven so
-# the system honours the Open/Closed Principle: new currencies/providers are
-# added here (or as new beans) without touching orchestration logic.
-# ----------------------------------------------------------------------------
 calendar:
   base-currency: MYR
-  # Hard ceiling per provider call in the scatter-gather. A slow provider is
-  # abandoned (and degraded out) rather than blowing the P99 budget.
   provider-timeout-millis: 450
   cache:
-    # Base TTL for a cached low fare. A random jitter (0..jitter-seconds) is
-    # added per key to prevent synchronised mass expiry (cache stampede).
     ttl-seconds: 86400
     ttl-jitter-seconds: 3600
-    # Negative-cache TTL: how long we remember "no fare on this date" so a
-    # genuinely empty date does not hammer providers on every request.
     empty-ttl-seconds: 300
   pubsub:
     sold-out-topic: price-class-sold-out
     sold-out-subscription: sold-out-sub
-  # Pre-population: on startup, asynchronously warm popular routes for the
-  # current month and the next N months so first real users hit a warm cache.
   warming:
     enabled: true
     months-ahead: 1
@@ -53,7 +38,6 @@ calendar:
       - KUL-SIN
       - KUL-BKK
       - KUL-DMK
-  # Exchange rates expressed as: 1 unit of base-currency = <rate> target units.
   exchange-rates:
     MYR: 1.0
     USD: 0.21
@@ -61,27 +45,21 @@ calendar:
     SGD: 0.29
     IDR: 3450.0
 
-# Per-carrier simulated latency/failure rate (display name + carrier code now live
-# in the FlightSearcherType enum). Keys must match FlightSearcherType.providerId().
 providers:
   settings:
-    airasia-malaysia:
+    sabre:
       min-latency-millis: 20
       max-latency-millis: 120
       failure-rate: 0.02
-    airasia-x:
+    amadeus:
       min-latency-millis: 30
       max-latency-millis: 150
       failure-rate: 0.05
-    thai-airasia:
+    galileo:
       min-latency-millis: 25
       max-latency-millis: 140
       failure-rate: 0.03
 
-# ----------------------------------------------------------------------------
-# Resilience4j circuit breakers: one instance per provider. On open circuit the
-# aggregator skips the provider and degrades gracefully instead of failing.
-# ----------------------------------------------------------------------------
 resilience4j:
   circuitbreaker:
     configs:
@@ -93,27 +71,24 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 4
         minimum-number-of-calls: 8
     instances:
-      airasia-malaysia:
+      sabre:
         base-config: provider
-      airasia-x:
+      amadeus:
         base-config: provider
-      thai-airasia:
+      galileo:
         base-config: provider
   timelimiter:
     configs:
       provider:
         timeout-duration: 400ms
     instances:
-      airasia-malaysia:
+      sabre:
         base-config: provider
-      airasia-x:
+      amadeus:
         base-config: provider
-      thai-airasia:
+      galileo:
         base-config: provider
 
-# ----------------------------------------------------------------------------
-# Observability: expose Prometheus + custom cache metrics (hits/misses/expired).
-# ----------------------------------------------------------------------------
 management:
   endpoints:
     web:

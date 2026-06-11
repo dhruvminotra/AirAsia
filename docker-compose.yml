@@ -19,7 +19,6 @@ services:
     build: .
     ports:
       - "8080:8080"
-    # Retry on boot in case the Pub/Sub emulator isn't accepting connections yet.
     restart: on-failure
     environment:
       - SPRING_REDIS_HOST=redis

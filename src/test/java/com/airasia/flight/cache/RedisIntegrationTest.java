@@ -78,13 +78,13 @@ class RedisIntegrationTest {
     @Test
     void cacheRoundTripsFareThroughRedis() {
         CachedLowFare fare = new CachedLowFare(DATE, new BigDecimal("123.45"),
-                "airasia-malaysia", "AK100", "PROMO", false);
+                "sabre", "AK100", "PROMO", false);
         cache.put("KUL", "SIN", fare);
 
         Map<LocalDate, CachedLowFare> loaded = cache.getAll("KUL", "SIN", List.of(DATE));
         assertThat(loaded).containsKey(DATE);
         assertThat(loaded.get(DATE).baseAmount()).isEqualByComparingTo("123.45");
-        assertThat(loaded.get(DATE).provider()).isEqualTo("airasia-malaysia");
+        assertThat(loaded.get(DATE).provider()).isEqualTo("sabre");
     }
 
     @Test

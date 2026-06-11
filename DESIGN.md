@@ -31,8 +31,8 @@ the AirAsia MOVE Low Fare Calendar backend.
                                   │        │             └───────┬──────────┘ │
                                   │        │      ┌──────────────┼───────────┐│
                                   │        │      ▼              ▼           ▼│   ┌──────────────────┐
-                                  │        │  FlightSearcherType enum drives one shared  │ (3 carriers, each│
-                                  │        │  (CircuitBreaker each, bounded pool)        │  on Navitaire)   │
+                                  │        │  SabreSearcher  AmadeusSearcher  GalileoSearcher │ (3 GDS suppliers,│
+                                  │        │  (CircuitBreaker each, bounded pool)             │  parallel calls) │
                                   │        │                                  │   └──────────────────┘
                                   │  ┌─────┴───────────────┐                  │
                                   │  │ SoldOutEventSubscriber│◀── price-class-sold-out ──┐
@@ -48,8 +48,8 @@ the AirAsia MOVE Low Fare Calendar backend.
 |-----------|----------------|
 | `FlightCalendarController` | Thin REST entry point (`flight.calendar`); validates the request and delegates to `CalendarService` / `SoldOutEventPublisher`. |
 | `CalendarService` | Orchestrates cache-aside read → coalesced miss load → aggregation → currency conversion → `FareCalendarResponse`. |
-| `FlightSearcherType` (enum) | Single source of truth for the carriers — one entry per AirAsia airline (AK/D7/FD). New carrier = new enum value + a yaml block. |
-| `NavitaireSearcher` | One Spring component (the mock Navitaire backend) — all carriers share it, parameterised by `FlightSearcherType`. |
+| `AbstractFlightSearcher` | Template-method base mirroring the prod `AbstractSearcher`. Each subclass declares `providerId()` + `displayName()` + `doSearch(query)`. |
+| `SabreSearcher` / `AmadeusSearcher` / `GalileoSearcher` | Three independent `@Component` subclasses — one per GDS supplier. Each owns its own `doSearch(query)` (in production: its own SDK / SOAP / REST adapter) and applies its own pricing factor → **same flight returned by all three at different prices** (the assignment's exact scenario). |
 | `FlightSearchEngine` | Parallel scatter-gather across carriers (submit `Callable` → `Future<SearchResult>[]` → get+merge), circuit breaker per provider, picks lowest. Mirrors prod `AbstractFlightSearchEngine`. |
 | `LowFareCache` | Cache-aside Redis repository (base-currency values, bulk `MGET`). |
 | `RequestCoalescer` | Thundering-herd protection (in-process single-flight per route+month). |
@@ -160,13 +160,13 @@ observability; `empty=true` is the negative-cache marker.
 
 | Pattern | Where | Why |
 |---------|-------|-----|
-| **Enum-driven dispatch** | `FlightSearcherType` + `NavitaireSearcher` | All carriers share one Navitaire backend, so the engine iterates the enum and parameterises a single searcher — no class explosion for thin per-carrier subclasses. |
+| **Template Method** | `AbstractFlightSearcher` → `SabreSearcher`/`AmadeusSearcher`/`GalileoSearcher` | One template enforces cross-cutting concerns (timing, sold-out filter); each GDS subclass plugs in only its identity + `doSearch`. Mirrors the prod `AbstractSearcher`. |
 | **Strategy + Open/Closed** | `ExchangeRateProvider` / currencies as config | New currency = a config row, no code. Live FX feed = a new `ExchangeRateProvider` impl, no caller change. |
 | **Scatter-Gather** | `FlightSearchEngine` | Submit a `Callable` per provider → `Future<SearchResult>[]` → `get(...)` within a shared deadline → merge → reduce-to-min. Mirrors prod `AbstractFlightSearchEngine`. |
 | **Cache-Aside** | `LowFareCache` + `CalendarService` | Read-through with explicit population and negative caching. |
 | **Single-Flight / Coalescing** | `RequestCoalescer` | Thundering-herd protection (one in-flight build per route+month). |
 | **Circuit Breaker** | Resilience4j per provider | Fault isolation + graceful degradation. |
-| **Open/Closed** | `FlightSearcherType.values()` | Add a carrier by adding one enum value + one yaml block — engine, breaker config, and metrics adapt automatically. |
+| **Open/Closed (plug-in discovery)** | `List<AbstractFlightSearcher>` Spring injection | Add a GDS = drop in a new `@Component` extending `AbstractFlightSearcher` + a yaml block. Engine, breaker, metrics adapt automatically. |
 
 Class sketch:
 
@@ -175,14 +175,15 @@ FlightCalendarController ──▶ CalendarService ──has──▶ LowFareCac
                                                       CurrencyConversionService, RequestCoalescer
                          ──▶ SoldOutEventPublisher (POST /sold-out)
 
-FlightSearcherType (enum)            ┌──────────────────────────────┐
-  ├─ AIRASIA_MALAYSIA  (AK)          │ NavitaireSearcher            │
-  ├─ AIRASIA_X         (D7)  ───▶   │ (one mock for all carriers,  │
-  └─ THAI_AIRASIA      (FD)          │  parameterised by the enum)  │
-                                     └──────────────────────────────┘
+AbstractFlightSearcher (template — search() → doSearch(); shared simulateLatency/Failure)
+   ▲                  ▲                    ▲
+SabreSearcher    AmadeusSearcher    GalileoSearcher
+("sabre",        ("amadeus",        ("galileo",
+ markup 1.03)     markup 1.07)       markup 1.05)
+   │                  │                    │
+   └─ each owns its own doSearch() → same flight (AK100/101/102), different prices ─┘
 
-FlightSearchEngine ──has──▶ NavitaireSearcher, ExecutorService(bounded pool), CircuitBreakerRegistry
-                   ──iterates──▶ FlightSearcherType.values()
+FlightSearchEngine ──has──▶ List<AbstractFlightSearcher>, ExecutorService(bounded pool), CircuitBreakerRegistry
                    ──per provider──▶ Callable<SearchResult>  (SearchResult wraps List<ProviderFare>)
 ```
 
@@ -229,9 +230,12 @@ fails the whole request; stale cache is preferred over an error.
 
 ## 5. Trade-offs & notes
 
-- Providers are **mocked** (`NavitaireSearcher`) on purpose — the brief asks for
-  design quality, and AirAsia runs Navitaire, so the abstraction mirrors our prod
-  `AbstractSearcher`/`NavitaireSearcher` stack rather than integrating real GDSs.
+- Providers are **mocked** on purpose — the brief asks for design quality, not three
+  real SDK integrations. Each GDS searcher owns its own `doSearch(query)`, so
+  swapping the mock for the real Sabre, Amadeus, and Galileo adapters is a per-class
+  change (their schemas differ in production) with no engine impact. The abstraction
+  mirrors our prod `AbstractSearcher` / `SabreSearcher` / `AmadeusV2Searcher` /
+  `GalileoSearcher` stack.
 - Conversion-at-read trades a tiny per-response CPU cost for a far higher hit ratio
   and simpler invalidation — the right trade for a read-heavy calendar.
 - Thundering-herd protection is **in-process** (single-flight). For a single service
